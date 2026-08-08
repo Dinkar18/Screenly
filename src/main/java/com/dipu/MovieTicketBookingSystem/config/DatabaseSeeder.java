@@ -17,9 +17,9 @@ public class DatabaseSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (userRepository.findByEmail("admin@cinereserve.com").isEmpty()) {
+        if (userRepository.findByEmail("admin@screenly.com").isEmpty()) {
             User admin = User.builder()
-                .email("admin@cinereserve.com")
+                .email("admin@screenly.com")
                 .password(passwordEncoder.encode("Admin@1234"))
                 .name("System Admin")
                 .role(Role.ADMIN)
@@ -28,7 +28,7 @@ public class DatabaseSeeder implements CommandLineRunner {
             
             userRepository.save(admin);
             System.out.println("\n✅ Default Admin User created successfully!");
-            System.out.println("📧 Email: admin@cinereserve.com");
+            System.out.println("📧 Email: admin@screenly.com");
             System.out.println("🔑 Password: Admin@1234\n");
         }
     }
