@@ -25,6 +25,8 @@ stripe:
     key: ${STRIPE_SECRET_KEY}
 
 app:
+  admin:
+    password: ${ADMIN_PASSWORD}
   cors:
     allowed-origins: ${FRONTEND_URL}
   jwt:
