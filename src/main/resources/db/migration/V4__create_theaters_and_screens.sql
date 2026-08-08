@@ -1,0 +1,19 @@
+CREATE TABLE theaters (
+    id UUID PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    city VARCHAR(100) NOT NULL,
+    address TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE screens (
+    id UUID PRIMARY KEY,
+    theater_id UUID NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    capacity INT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_screen_theater FOREIGN KEY (theater_id) REFERENCES theaters(id) ON DELETE CASCADE,
+    CONSTRAINT uc_theater_screen_name UNIQUE (theater_id, name)
+);

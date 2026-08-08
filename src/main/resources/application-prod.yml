@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+    show-sql: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+stripe:
+  secret:
+    key: ${STRIPE_SECRET_KEY}
+
+app:
+  cors:
+    allowed-origins: ${FRONTEND_URL}
+  jwt:
+    secret: ${JWT_SECRET}
+    expirationMs: 86400000
+
+server:
+  port: ${PORT:8080}
+  
+logging:
+  level:
+    root: INFO
+    com.dipu.MovieTicketBookingSystem: INFO

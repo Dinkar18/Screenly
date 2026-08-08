@@ -1,0 +1,1082 @@
+
+--- AuthService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.dipu.MovieTicketBookingSystem.dto.AuthRequest;
+import com.dipu.MovieTicketBookingSystem.dto.AuthResponse;
+import com.dipu.MovieTicketBookingSystem.dto.RegisterRequest;
+import com.dipu.MovieTicketBookingSystem.model.entity.User;
+import com.dipu.MovieTicketBookingSystem.model.enums.Role;
+import com.dipu.MovieTicketBookingSystem.repository.UserRepository;
+import com.dipu.MovieTicketBookingSystem.security.CustomUserDetails;
+import com.dipu.MovieTicketBookingSystem.security.JwtUtil;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import com.dipu.MovieTicketBookingSystem.exception.EmailAlreadyRegisteredException;
+import com.dipu.MovieTicketBookingSystem.exception.InvalidTokenException;
+import com.dipu.MovieTicketBookingSystem.exception.ResourceNotFoundException;
+import com.dipu.MovieTicketBookingSystem.repository.VerificationTokenRepository;
+
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtUtil jwtUtil;
+    private final AuthenticationManager authenticationManager;
+
+    private final VerificationTokenRepository verificationTokenRepository;
+    private final EmailService emailService;
+
+    private static final int OTP_EXPIRY_MINUTES = 10;
+    private static final String OTP_EMAIL_SUBJECT = "Verify Your CineReserve Account";
+
+    public String register(RegisterRequest request) {
+        var existingUserOpt = userRepository.findByEmail(request.getEmail());
+
+        if (existingUserOpt.isEmpty()) {
+            User newUser = User.builder()
+                    .name(request.getName())
+                    .email(request.getEmail())
+                    .password(passwordEncoder.encode(request.getPassword()))
+                    .role(Role.CUSTOMER)
+                    .isVerified(false)
+                    .build();
+            newUser = userRepository.save(newUser);
+            generateAndSendOtp(newUser);
+            return "User registered successfully. Please check your email for the OTP.";
+        }
+
+        User existingUser = existingUserOpt.get();
+        if (existingUser.isVerified()) {
+            throw new EmailAlreadyRegisteredException("Email already registered");
+        }
+
+        // User exists but not verified, update details and resend OTP
+        existingUser.setName(request.getName());
+        existingUser.setPassword(passwordEncoder.encode(request.getPassword()));
+        existingUser = userRepository.save(existingUser);
+        
+        // Delete old tokens for this user
+        verificationTokenRepository.deleteByUser(existingUser);
+        generateAndSendOtp(existingUser);
+
+        return "User registered successfully. Please check your email for the OTP.";
+    }
+
+    private void generateAndSendOtp(User user) {
+        // Generate 6-digit OTP
+        String otp = String.format("%06d", new java.util.Random().nextInt(999999));
+        
+        com.dipu.MovieTicketBookingSystem.model.entity.VerificationToken verificationToken = com.dipu.MovieTicketBookingSystem.model.entity.VerificationToken.builder()
+                .token(otp)
+                .user(user)
+                .expiryDate(java.time.LocalDateTime.now().plusMinutes(OTP_EXPIRY_MINUTES))
+                .build();
+                
+        verificationTokenRepository.save(verificationToken);
+
+        emailService.sendEmail(
+                user.getEmail(),
+                OTP_EMAIL_SUBJECT,
+                "Your verification OTP is: " + otp + "\nIt will expire in " + OTP_EXPIRY_MINUTES + " minutes."
+        );
+    }
+
+    public String verifyEmail(String token) {
+        com.dipu.MovieTicketBookingSystem.model.entity.VerificationToken verificationToken = verificationTokenRepository.findByToken(token)
+                .orElseThrow(() -> new InvalidTokenException("Invalid or missing verification token"));
+
+        if (verificationToken.isExpired()) {
+            throw new InvalidTokenException("Verification token has expired");
+        }
+
+        User user = verificationToken.getUser();
+        user.setVerified(true);
+        userRepository.save(user);
+        
+        verificationTokenRepository.delete(verificationToken);
+
+        return "Email verified successfully. You can now login.";
+    }
+
+    public AuthResponse login(AuthRequest request) {
+        authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(
+                        request.getEmail(),
+                        request.getPassword()
+                )
+        );
+
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (!user.isVerified()) {
+            throw new InvalidTokenException("Please verify your email before logging in.");
+        }
+
+        var userDetails = new CustomUserDetails(user);
+        var jwtToken = jwtUtil.generateToken(userDetails);
+
+        return AuthResponse.builder()
+                .userId(user.getId())
+                .name(user.getName())
+                .email(user.getEmail())
+                .role(user.getRole().name())
+                .token(jwtToken)
+                .message("Login successful")
+                .build();
+    }
+}
+
+--- BookingService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.dipu.MovieTicketBookingSystem.dto.BookingRequest;
+import com.dipu.MovieTicketBookingSystem.dto.BookingResponse;
+import com.dipu.MovieTicketBookingSystem.dto.SeatResponse;
+import com.dipu.MovieTicketBookingSystem.model.entity.Booking;
+import com.dipu.MovieTicketBookingSystem.model.entity.Showtime;
+import com.dipu.MovieTicketBookingSystem.model.entity.ShowtimeSeat;
+import com.dipu.MovieTicketBookingSystem.model.entity.User;
+import com.dipu.MovieTicketBookingSystem.model.enums.BookingStatus;
+import com.dipu.MovieTicketBookingSystem.model.enums.SeatStatus;
+import com.dipu.MovieTicketBookingSystem.repository.BookingRepository;
+import com.dipu.MovieTicketBookingSystem.repository.ShowtimeRepository;
+import com.dipu.MovieTicketBookingSystem.repository.ShowtimeSeatRepository;
+import com.dipu.MovieTicketBookingSystem.repository.UserRepository;
+import com.dipu.MovieTicketBookingSystem.exception.ResourceNotFoundException;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class BookingService {
+
+    private final BookingRepository bookingRepository;
+    private final ShowtimeRepository showtimeRepository;
+    private final ShowtimeSeatRepository showtimeSeatRepository;
+    private final UserRepository userRepository;
+    private final NotificationService notificationService;
+
+    public List<SeatResponse> getSeatsForShowtime(UUID showtimeId) {
+        return showtimeSeatRepository.findByShowtimeId(showtimeId).stream()
+                .map(s -> SeatResponse.builder()
+                        .showtimeSeatId(s.getId())
+                        .seatIdentifier(s.getSeat().getSeatIdentifier())
+                        .status(s.getStatus())
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    @Transactional
+    public BookingResponse createBooking(BookingRequest request, String userEmail, String idempotencyKey) {
+        // Idempotency is now handled declaratively via AOP Aspect (@Idempotent) in the Controller.
+
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        Showtime showtime = showtimeRepository.findById(request.getShowtimeId())
+                .orElseThrow(() -> new ResourceNotFoundException("Showtime not found"));
+
+        // 2. Pessimistic Locking: Lock the requested seats to prevent concurrent double-booking
+        List<ShowtimeSeat> requestedSeats = showtimeSeatRepository.findByIdsForUpdate(request.getShowtimeSeatIds());
+        
+        if (requestedSeats.size() != request.getShowtimeSeatIds().size()) {
+            throw new IllegalArgumentException("One or more requested seats are invalid");
+        }
+
+        // Verify all requested seats belong to this showtime
+        if (requestedSeats.stream().anyMatch(s -> !s.getShowtime().getId().equals(showtime.getId()))) {
+            throw new IllegalArgumentException("Seat does not belong to this showtime");
+        }
+
+        // 3. Status Verification (If any seat is booked, the whole transaction rolls back)
+        for (ShowtimeSeat seat : requestedSeats) {
+            if (seat.getStatus() != SeatStatus.AVAILABLE) {
+                log.warn("Seat {} is no longer available", seat.getSeat().getSeatIdentifier());
+                throw new com.dipu.MovieTicketBookingSystem.exception.SeatUnavailableException("Seat " + seat.getSeat().getSeatIdentifier() + " is already booked by someone else!");
+            }
+        }
+
+        // 4. Calculate total price
+        BigDecimal totalAmount = showtime.getPrice().multiply(new BigDecimal(requestedSeats.size()));
+
+        // 5. Create Booking
+        Booking booking = Booking.builder()
+                .user(user)
+                .showtime(showtime)
+                .totalAmount(totalAmount)
+                .status(BookingStatus.PENDING) // Set to PENDING initially
+                .idempotencyKey(idempotencyKey)
+                .build();
+        
+        Booking savedBooking = bookingRepository.save(booking);
+
+        // 6. Update seats to RESERVED
+        for (ShowtimeSeat seat : requestedSeats) {
+            seat.setStatus(SeatStatus.RESERVED);
+            seat.setBooking(savedBooking);
+        }
+        showtimeSeatRepository.saveAll(requestedSeats);
+
+        log.info("Successfully reserved {} seats for user {}, pending payment", requestedSeats.size(), userEmail);
+        
+        return mapToResponse(savedBooking, requestedSeats);
+    }
+
+    @Transactional
+    public void confirmBooking(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            log.info("Booking {} is already confirmed.", bookingId);
+            return;
+        }
+
+        booking.setStatus(BookingStatus.CONFIRMED);
+        bookingRepository.save(booking);
+
+        // Update seats to BOOKED
+        List<ShowtimeSeat> seats = showtimeSeatRepository.findByShowtimeId(booking.getShowtime().getId()).stream()
+                .filter(s -> booking.getId().equals(s.getBooking() != null ? s.getBooking().getId() : null))
+                .collect(Collectors.toList());
+
+        for (ShowtimeSeat seat : seats) {
+            seat.setStatus(SeatStatus.BOOKED);
+        }
+        showtimeSeatRepository.saveAll(seats);
+
+        log.info("Payment successful, booking {} confirmed.", bookingId);
+
+        BookingResponse response = mapToResponse(booking, seats);
+        // Fire Asynchronous Event (Generate PDF and Email)
+        notificationService.sendBookingConfirmation(response, booking.getUser().getEmail());
+    }
+
+    public com.dipu.MovieTicketBookingSystem.dto.PageResponse<BookingResponse> getMyBookings(String userEmail, org.springframework.data.domain.Pageable pageable) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        org.springframework.data.domain.Page<Booking> bookingPage = bookingRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
+        List<BookingResponse> responses = bookingPage.getContent().stream()
+                .map(booking -> {
+                    // Fetch seats for this booking
+                    List<ShowtimeSeat> bookedSeats = showtimeSeatRepository.findByShowtimeId(booking.getShowtime().getId())
+                            .stream()
+                            .filter(s -> booking.getId().equals(s.getBooking() != null ? s.getBooking().getId() : null))
+                            .collect(Collectors.toList());
+                    return mapToResponse(booking, bookedSeats);
+                })
+                .collect(Collectors.toList());
+
+        return com.dipu.MovieTicketBookingSystem.dto.PageResponse.<BookingResponse>builder()
+                .content(responses)
+                .pageNumber(bookingPage.getNumber())
+                .pageSize(bookingPage.getSize())
+                .totalElements(bookingPage.getTotalElements())
+                .totalPages(bookingPage.getTotalPages())
+                .isLast(bookingPage.isLast())
+                .build();
+    }
+
+    private BookingResponse mapToResponse(Booking booking, List<ShowtimeSeat> seats) {
+        List<String> seatNumbers = seats.stream()
+                .map(s -> s.getSeat().getSeatIdentifier())
+                .collect(Collectors.toList());
+
+        return BookingResponse.builder()
+                .id(booking.getId())
+                .userId(booking.getUser().getId())
+                .movieTitle(booking.getShowtime().getMovie().getTitle())
+                .theaterName(booking.getShowtime().getScreen().getTheater().getName())
+                .screenName(booking.getShowtime().getScreen().getName())
+                .showtime(booking.getShowtime().getStartTime())
+                .bookedSeats(seatNumbers)
+                .totalAmount(booking.getTotalAmount())
+                .status(booking.getStatus())
+                .createdAt(booking.getCreatedAt())
+                .build();
+    }
+}
+
+--- EmailService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+
+@Service
+public class EmailService {
+
+    @Autowired
+    private JavaMailSender javaMailSender;
+
+    @Async
+    public void sendEmail(String to, String subject, String text) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(to);
+        message.setSubject(subject);
+        message.setText(text);
+        
+        javaMailSender.send(message);
+    }
+}
+
+--- MovieService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.dipu.MovieTicketBookingSystem.dto.MovieRequest;
+import com.dipu.MovieTicketBookingSystem.dto.MovieResponse;
+import com.dipu.MovieTicketBookingSystem.model.entity.Movie;
+import com.dipu.MovieTicketBookingSystem.repository.MovieRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
+
+import com.dipu.MovieTicketBookingSystem.dto.PageResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import jakarta.persistence.criteria.Predicate;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class MovieService {
+
+    private final MovieRepository movieRepository;
+
+    @CacheEvict(value = "movies", allEntries = true)
+    public MovieResponse createMovie(MovieRequest request) {
+        Movie movie = Movie.builder()
+                .title(request.getTitle())
+                .description(request.getDescription())
+                .genre(request.getGenre())
+                .durationMinutes(request.getDurationMinutes())
+                .language(request.getLanguage())
+                .releaseDate(request.getReleaseDate())
+                .posterUrl(request.getPosterUrl())
+                .build();
+        
+        Movie savedMovie = movieRepository.save(movie);
+        return mapToResponse(savedMovie);
+    }
+
+    @Cacheable(value = "movies", key = "#pageable.pageNumber + '-' + #pageable.pageSize")
+    public PageResponse<MovieResponse> getAllMovies(Pageable pageable) {
+        Page<Movie> moviePage = movieRepository.findAll(pageable);
+        List<MovieResponse> responses = moviePage.getContent().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+
+        return PageResponse.<MovieResponse>builder()
+                .content(responses)
+                .pageNumber(moviePage.getNumber())
+                .pageSize(moviePage.getSize())
+                .totalElements(moviePage.getTotalElements())
+                .totalPages(moviePage.getTotalPages())
+                .isLast(moviePage.isLast())
+                .build();
+    }
+
+    public PageResponse<MovieResponse> searchMovies(String title, String genre, String language, Pageable pageable) {
+        Specification<Movie> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            if (title != null && !title.isBlank()) {
+                predicates.add(cb.like(cb.lower(root.get("title")), "%" + title.toLowerCase() + "%"));
+            }
+            if (genre != null && !genre.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("genre")), genre.toLowerCase()));
+            }
+            if (language != null && !language.isBlank()) {
+                predicates.add(cb.equal(cb.lower(root.get("language")), language.toLowerCase()));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+
+        Page<Movie> moviePage = movieRepository.findAll(spec, pageable);
+        List<MovieResponse> responses = moviePage.getContent().stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+
+        return PageResponse.<MovieResponse>builder()
+                .content(responses)
+                .pageNumber(moviePage.getNumber())
+                .pageSize(moviePage.getSize())
+                .totalElements(moviePage.getTotalElements())
+                .totalPages(moviePage.getTotalPages())
+                .isLast(moviePage.isLast())
+                .build();
+    }
+
+    public MovieResponse getMovieById(UUID id) {
+        Movie movie = movieRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Movie not found with id: " + id));
+        return mapToResponse(movie);
+    }
+
+    @CacheEvict(value = "movies", allEntries = true)
+    public MovieResponse updateMovie(UUID id, MovieRequest request) {
+        Movie movie = movieRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Movie not found with id: " + id));
+
+        movie.setTitle(request.getTitle());
+        movie.setDescription(request.getDescription());
+        movie.setGenre(request.getGenre());
+        movie.setDurationMinutes(request.getDurationMinutes());
+        movie.setLanguage(request.getLanguage());
+        movie.setReleaseDate(request.getReleaseDate());
+        movie.setPosterUrl(request.getPosterUrl());
+
+        Movie updatedMovie = movieRepository.save(movie);
+        return mapToResponse(updatedMovie);
+    }
+
+    @CacheEvict(value = "movies", allEntries = true)
+    public void deleteMovie(UUID id) {
+        Movie movie = movieRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Movie not found with id: " + id));
+        movieRepository.delete(movie);
+    }
+
+    private MovieResponse mapToResponse(Movie movie) {
+        return MovieResponse.builder()
+                .id(movie.getId())
+                .title(movie.getTitle())
+                .description(movie.getDescription())
+                .genre(movie.getGenre())
+                .durationMinutes(movie.getDurationMinutes())
+                .language(movie.getLanguage())
+                .releaseDate(movie.getReleaseDate())
+                .posterUrl(movie.getPosterUrl())
+                .build();
+    }
+}
+
+--- NotificationService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.dipu.MovieTicketBookingSystem.dto.BookingResponse;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.MimeMessage;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+
+@Slf4j
+@Service
+@RequiredArgsConstructor
+public class NotificationService {
+
+    private final JavaMailSender mailSender;
+    private final TicketPdfGeneratorService ticketPdfGeneratorService;
+
+    @Value("${mail.from.address:noreply@cinereserve.com}")
+    private String fromAddress;
+
+    @Async
+    public void sendBookingConfirmation(BookingResponse bookingResponse, String userEmail) {
+        log.info("Starting background task to generate PDF and send email to {}", userEmail);
+
+        try {
+            // 1. Generate PDF Ticket
+            byte[] pdfBytes = ticketPdfGeneratorService.generateTicketPdf(bookingResponse);
+
+            // 2. Send Email with Attachment
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true);
+
+            helper.setTo(userEmail);
+            helper.setSubject("Your Movie Ticket - " + bookingResponse.getMovieTitle());
+            helper.setText("Hi there,\n\nYour booking is confirmed! Please find your PDF ticket attached to this email.\n\nPlease arrive 15 minutes early.\n\nEnjoy the movie!");
+            helper.setFrom(fromAddress);
+
+            // Attach PDF
+            helper.addAttachment("MovieTicket_" + bookingResponse.getId() + ".pdf", new ByteArrayResource(pdfBytes));
+
+            mailSender.send(message);
+            log.info("Successfully sent PDF ticket email to {}", userEmail);
+
+        } catch (com.itextpdf.text.DocumentException e) {
+            log.error("Failed to generate PDF for booking {}: {}", bookingResponse.getId(), e.getMessage());
+        } catch (MessagingException e) {
+            log.error("Failed to send email to {} for booking {}: {}", userEmail, bookingResponse.getId(), e.getMessage());
+        } catch (Exception e) {
+            log.error("Unexpected error during booking confirmation for {}: {}", bookingResponse.getId(), e.getMessage());
+        }
+    }
+}
+
+--- PasswordResetService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.dipu.MovieTicketBookingSystem.dto.ForgotPasswordRequest;
+import com.dipu.MovieTicketBookingSystem.dto.ResetPasswordRequest;
+import com.dipu.MovieTicketBookingSystem.model.entity.PasswordResetToken;
+import com.dipu.MovieTicketBookingSystem.model.entity.User;
+import com.dipu.MovieTicketBookingSystem.repository.PasswordResetTokenRepository;
+import com.dipu.MovieTicketBookingSystem.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.Random;
+
+@Service
+@RequiredArgsConstructor
+public class PasswordResetService {
+
+    private final UserRepository userRepository;
+    private final PasswordResetTokenRepository passwordResetTokenRepository;
+    private final EmailService emailService;
+    private final PasswordEncoder passwordEncoder;
+
+    public String processForgotPassword(ForgotPasswordRequest request) {
+        User user = userRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("User not found with this email"));
+
+        String otp = String.format("%06d", new Random().nextInt(999999));
+
+        // Delete any existing token
+        passwordResetTokenRepository.findByUser(user)
+                .ifPresent(passwordResetTokenRepository::delete);
+
+        PasswordResetToken token = PasswordResetToken.builder()
+                .token(otp)
+                .user(user)
+                .expiryDate(LocalDateTime.now().plusMinutes(10))
+                .build();
+
+        passwordResetTokenRepository.save(token);
+
+        emailService.sendEmail(
+                user.getEmail(),
+                "Password Reset Request",
+                "Your password reset OTP is: " + otp + "\nIt will expire in 10 minutes."
+        );
+
+        return "Password reset OTP sent to email";
+    }
+
+    public String processResetPassword(ResetPasswordRequest request) {
+        PasswordResetToken resetToken = passwordResetTokenRepository.findByToken(request.getToken())
+                .orElseThrow(() -> new RuntimeException("Invalid or missing reset token"));
+
+        if (resetToken.isExpired()) {
+            passwordResetTokenRepository.delete(resetToken);
+            throw new RuntimeException("Reset token has expired");
+        }
+
+        User user = resetToken.getUser();
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        passwordResetTokenRepository.delete(resetToken);
+
+        return "Password has been successfully reset. You can now login.";
+    }
+}
+
+--- PaymentService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.stripe.Stripe;
+import com.stripe.exception.StripeException;
+import com.stripe.model.PaymentIntent;
+import com.stripe.param.PaymentIntentCreateParams;
+import jakarta.annotation.PostConstruct;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class PaymentService {
+
+    @Value("${stripe.api.key}")
+    private String stripeApiKey;
+
+    @PostConstruct
+    public void init() {
+        Stripe.apiKey = stripeApiKey;
+        log.info("Stripe initialized with key: {}", stripeApiKey != null ? "HIDDEN" : "NULL");
+    }
+
+    public PaymentIntent createPaymentIntent(BigDecimal amount, String currency, String bookingId) throws StripeException {
+        // Stripe expects amount in smallest currency unit (e.g., cents for USD)
+        long amountInCents = amount.multiply(new BigDecimal("100")).longValue();
+
+        PaymentIntentCreateParams params = PaymentIntentCreateParams.builder()
+                .setAmount(amountInCents)
+                .setCurrency(currency)
+                .putMetadata("bookingId", bookingId)
+                .setAutomaticPaymentMethods(
+                        PaymentIntentCreateParams.AutomaticPaymentMethods.builder()
+                                .setEnabled(true)
+                                .build()
+                )
+                .build();
+
+        log.info("Creating Stripe PaymentIntent for Booking ID: {}, Amount: {}", bookingId, amount);
+        PaymentIntent paymentIntent = PaymentIntent.create(params);
+        log.info("Successfully created PaymentIntent: {}", paymentIntent.getId());
+
+        return paymentIntent;
+    }
+}
+
+--- ShowtimeService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.dipu.MovieTicketBookingSystem.dto.ShowtimeRequest;
+import com.dipu.MovieTicketBookingSystem.dto.ShowtimeResponse;
+import com.dipu.MovieTicketBookingSystem.model.entity.Movie;
+import com.dipu.MovieTicketBookingSystem.model.entity.Screen;
+import com.dipu.MovieTicketBookingSystem.model.entity.Showtime;
+import com.dipu.MovieTicketBookingSystem.repository.MovieRepository;
+import com.dipu.MovieTicketBookingSystem.repository.ScreenRepository;
+import com.dipu.MovieTicketBookingSystem.repository.ShowtimeRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class ShowtimeService {
+
+    private final ShowtimeRepository showtimeRepository;
+    private final MovieRepository movieRepository;
+    private final ScreenRepository screenRepository;
+    private final com.dipu.MovieTicketBookingSystem.repository.SeatRepository seatRepository;
+    private final com.dipu.MovieTicketBookingSystem.repository.ShowtimeSeatRepository showtimeSeatRepository;
+
+    public ShowtimeResponse createShowtime(ShowtimeRequest request) {
+        Movie movie = movieRepository.findById(request.getMovieId())
+                .orElseThrow(() -> new RuntimeException("Movie not found"));
+
+        Screen screen = screenRepository.findById(request.getScreenId())
+                .orElseThrow(() -> new RuntimeException("Screen not found"));
+
+        // Calculate end time: movie duration + 30 minutes buffer for cleaning
+        LocalDateTime endTime = request.getStartTime()
+                .plusMinutes(movie.getDurationMinutes())
+                .plusMinutes(30);
+
+        // Check for overlapping showtimes on the same screen
+        List<Showtime> overlappingShowtimes = showtimeRepository.findOverlappingShowtimes(
+                screen.getId(), request.getStartTime(), endTime);
+
+        if (!overlappingShowtimes.isEmpty()) {
+            throw new RuntimeException("Screen is already booked for this time period");
+        }
+
+        Showtime showtime = Showtime.builder()
+                .movie(movie)
+                .screen(screen)
+                .startTime(request.getStartTime())
+                .endTime(endTime)
+                .price(request.getPrice())
+                .build();
+
+        Showtime savedShowtime = showtimeRepository.save(showtime);
+
+        // Auto-generate ShowtimeSeat entries for every physical seat in this screen
+        List<com.dipu.MovieTicketBookingSystem.model.entity.Seat> seats = seatRepository.findByScreenId(screen.getId());
+        List<com.dipu.MovieTicketBookingSystem.model.entity.ShowtimeSeat> showtimeSeats = seats.stream()
+                .map(seat -> com.dipu.MovieTicketBookingSystem.model.entity.ShowtimeSeat.builder()
+                        .showtime(savedShowtime)
+                        .seat(seat)
+                        .status(com.dipu.MovieTicketBookingSystem.model.enums.SeatStatus.AVAILABLE)
+                        .build())
+                .collect(Collectors.toList());
+        showtimeSeatRepository.saveAll(showtimeSeats);
+
+        return mapToResponse(savedShowtime);
+    }
+
+    public List<ShowtimeResponse> getShowtimesByMovie(UUID movieId) {
+        return showtimeRepository.findByMovieIdAndStartTimeAfterAndIsActiveTrueOrderByStartTimeAsc(movieId, LocalDateTime.now())
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    public List<ShowtimeResponse> getShowtimesByTheater(UUID theaterId) {
+        return showtimeRepository.findFutureShowtimesByTheater(theaterId, LocalDateTime.now())
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    public ShowtimeResponse updateShowtime(UUID id, ShowtimeRequest request) {
+        Showtime showtime = showtimeRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Showtime not found"));
+
+        Movie movie = movieRepository.findById(request.getMovieId())
+                .orElseThrow(() -> new RuntimeException("Movie not found"));
+
+        Screen screen = screenRepository.findById(request.getScreenId())
+                .orElseThrow(() -> new RuntimeException("Screen not found"));
+
+        // Calculate end time
+        LocalDateTime endTime = request.getStartTime()
+                .plusMinutes(movie.getDurationMinutes())
+                .plusMinutes(30);
+
+        // Check for overlapping showtimes on the same screen (excluding this showtime itself)
+        List<Showtime> overlappingShowtimes = showtimeRepository.findOverlappingShowtimes(
+                screen.getId(), request.getStartTime(), endTime);
+        
+        boolean hasOverlap = overlappingShowtimes.stream().anyMatch(s -> !s.getId().equals(showtime.getId()));
+        if (hasOverlap) {
+            throw new RuntimeException("Screen is already booked for this time period");
+        }
+
+        showtime.setMovie(movie);
+        showtime.setScreen(screen);
+        showtime.setStartTime(request.getStartTime());
+        showtime.setEndTime(endTime);
+        showtime.setPrice(request.getPrice());
+
+        Showtime updatedShowtime = showtimeRepository.save(showtime);
+        return mapToResponse(updatedShowtime);
+    }
+
+    public void deleteShowtime(UUID id) {
+        Showtime showtime = showtimeRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Showtime not found"));
+        
+        List<com.dipu.MovieTicketBookingSystem.model.entity.ShowtimeSeat> seats = showtimeSeatRepository.findByShowtimeId(id);
+        boolean hasBookings = seats.stream().anyMatch(s -> s.getStatus() == com.dipu.MovieTicketBookingSystem.model.enums.SeatStatus.BOOKED);
+        
+        if (hasBookings) {
+            throw new RuntimeException("Cannot delete showtime because it has active bookings.");
+        }
+        
+        showtime.setActive(false);
+        showtimeRepository.save(showtime);
+    }
+
+    private ShowtimeResponse mapToResponse(Showtime showtime) {
+        return ShowtimeResponse.builder()
+                .id(showtime.getId())
+                .movieId(showtime.getMovie().getId())
+                .movieTitle(showtime.getMovie().getTitle())
+                .screenId(showtime.getScreen().getId())
+                .screenName(showtime.getScreen().getName())
+                .theaterId(showtime.getScreen().getTheater().getId())
+                .theaterName(showtime.getScreen().getTheater().getName())
+                .startTime(showtime.getStartTime())
+                .endTime(showtime.getEndTime())
+                .price(showtime.getPrice())
+                .build();
+    }
+}
+
+--- TheaterService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.dipu.MovieTicketBookingSystem.dto.ScreenRequest;
+import com.dipu.MovieTicketBookingSystem.dto.ScreenResponse;
+import com.dipu.MovieTicketBookingSystem.dto.TheaterRequest;
+import com.dipu.MovieTicketBookingSystem.dto.TheaterResponse;
+import com.dipu.MovieTicketBookingSystem.model.entity.Screen;
+import com.dipu.MovieTicketBookingSystem.model.entity.Seat;
+import com.dipu.MovieTicketBookingSystem.model.entity.Theater;
+import com.dipu.MovieTicketBookingSystem.repository.ScreenRepository;
+import com.dipu.MovieTicketBookingSystem.repository.TheaterRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class TheaterService {
+
+    private final TheaterRepository theaterRepository;
+    private final ScreenRepository screenRepository;
+    private final com.dipu.MovieTicketBookingSystem.repository.SeatRepository seatRepository;
+    private final com.dipu.MovieTicketBookingSystem.repository.ShowtimeRepository showtimeRepository;
+
+    // --- Theater Operations ---
+
+    public TheaterResponse createTheater(TheaterRequest request) {
+        Theater theater = Theater.builder()
+                .name(request.getName())
+                .city(request.getCity())
+                .address(request.getAddress())
+                .build();
+        
+        Theater savedTheater = theaterRepository.save(theater);
+        return mapToTheaterResponse(savedTheater);
+    }
+
+    public List<TheaterResponse> getAllTheaters() {
+        return theaterRepository.findByIsActiveTrue().stream()
+                .map(this::mapToTheaterResponse)
+                .collect(Collectors.toList());
+    }
+
+    public TheaterResponse getTheaterById(UUID id) {
+        Theater theater = theaterRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Theater not found"));
+        return mapToTheaterResponse(theater);
+    }
+
+    public TheaterResponse updateTheater(UUID id, TheaterRequest request) {
+        Theater theater = theaterRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Theater not found"));
+
+        theater.setName(request.getName());
+        theater.setCity(request.getCity());
+        theater.setAddress(request.getAddress());
+
+        Theater updatedTheater = theaterRepository.save(theater);
+        return mapToTheaterResponse(updatedTheater);
+    }
+
+    public void deleteTheater(UUID id) {
+        Theater theater = theaterRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Theater not found"));
+        
+        List<com.dipu.MovieTicketBookingSystem.model.entity.Showtime> futureShowtimes = showtimeRepository.findFutureShowtimesByTheater(id, java.time.LocalDateTime.now());
+        if (!futureShowtimes.isEmpty()) {
+            throw new RuntimeException("Cannot delete theater because it has active future showtimes. Please cancel them first.");
+        }
+
+        theater.setActive(false);
+        // Soft delete all screens in the theater
+        theater.getScreens().forEach(s -> s.setActive(false));
+        
+        theaterRepository.save(theater);
+    }
+
+    // --- Screen Operations ---
+
+    public ScreenResponse addScreen(ScreenRequest request) {
+        Theater theater = theaterRepository.findById(request.getTheaterId())
+                .orElseThrow(() -> new RuntimeException("Theater not found"));
+
+        // Check if screen name already exists in this theater
+        boolean screenExists = theater.getScreens().stream()
+                .anyMatch(s -> s.getName().equalsIgnoreCase(request.getName()));
+        
+        if (screenExists) {
+            throw new RuntimeException("Screen name already exists in this theater");
+        }
+
+        Screen screen = Screen.builder()
+                .theater(theater)
+                .name(request.getName())
+                .capacity(request.getCapacity())
+                .build();
+
+        Screen savedScreen = screenRepository.save(screen);
+
+        // Auto-generate physical seats (e.g. A1, A2... J10)
+        generateSeatsForScreen(savedScreen);
+
+        return mapToScreenResponse(savedScreen);
+    }
+
+    private void generateSeatsForScreen(Screen screen) {
+        int capacity = screen.getCapacity();
+        int rows = (int) Math.ceil((double) capacity / 10);
+        int currentSeatCount = 0;
+
+        for (int row = 0; row < rows; row++) {
+            for (int num = 1; num <= 10; num++) {
+                if (currentSeatCount >= capacity) break;
+
+                String seatIdentifier = String.valueOf(row + 1) + getExcelColumnName(num);
+                Seat seat = Seat.builder()
+                        .screen(screen)
+                        .seatIdentifier(seatIdentifier)
+                        .build();
+                seatRepository.save(seat);
+                currentSeatCount++;
+            }
+        }
+    }
+
+    private String getExcelColumnName(int n) {
+        StringBuilder result = new StringBuilder();
+        while (n > 0) {
+            n--;
+            result.insert(0, (char) ('A' + (n % 26)));
+            n /= 26;
+        }
+        return result.toString();
+    }
+
+    public List<ScreenResponse> getScreensByTheaterId(UUID theaterId) {
+        // Validate theater exists
+        if (!theaterRepository.existsById(theaterId)) {
+            throw new RuntimeException("Theater not found");
+        }
+        
+        return screenRepository.findByTheaterIdAndIsActiveTrue(theaterId).stream()
+                .map(this::mapToScreenResponse)
+                .collect(Collectors.toList());
+    }
+
+    public ScreenResponse updateScreen(UUID id, ScreenRequest request) {
+        Screen screen = screenRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Screen not found"));
+
+        // Name check if changed
+        if (!screen.getName().equalsIgnoreCase(request.getName())) {
+            boolean screenExists = screen.getTheater().getScreens().stream()
+                    .anyMatch(s -> s.getName().equalsIgnoreCase(request.getName()));
+            if (screenExists) {
+                throw new RuntimeException("Screen name already exists in this theater");
+            }
+        }
+
+        screen.setName(request.getName());
+        // Capacity is usually static because seats are generated. We will update the field but not regenerate seats.
+        screen.setCapacity(request.getCapacity());
+        
+        Screen updatedScreen = screenRepository.save(screen);
+        return mapToScreenResponse(updatedScreen);
+    }
+
+    public void deleteScreen(UUID id) {
+        Screen screen = screenRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Screen not found"));
+        
+        // Find future showtimes for this screen
+        List<com.dipu.MovieTicketBookingSystem.model.entity.Showtime> futureShowtimes = showtimeRepository.findAll().stream()
+                .filter(s -> s.getScreen().getId().equals(id) && s.isActive() && s.getStartTime().isAfter(java.time.LocalDateTime.now()))
+                .collect(Collectors.toList());
+                
+        if (!futureShowtimes.isEmpty()) {
+            throw new RuntimeException("Cannot delete screen because it has active future showtimes. Please cancel them first.");
+        }
+        
+        screen.setActive(false);
+        screenRepository.save(screen);
+    }
+
+    // --- Mappers ---
+
+    private TheaterResponse mapToTheaterResponse(Theater theater) {
+        return TheaterResponse.builder()
+                .id(theater.getId())
+                .name(theater.getName())
+                .city(theater.getCity())
+                .address(theater.getAddress())
+                .build();
+    }
+
+    private ScreenResponse mapToScreenResponse(Screen screen) {
+        return ScreenResponse.builder()
+                .id(screen.getId())
+                .theaterId(screen.getTheater().getId())
+                .name(screen.getName())
+                .capacity(screen.getCapacity())
+                .build();
+    }
+}
+
+--- TicketPdfGeneratorService.java ---
+package com.dipu.MovieTicketBookingSystem.service;
+
+import com.dipu.MovieTicketBookingSystem.dto.BookingResponse;
+import com.itextpdf.text.Document;
+import com.itextpdf.text.DocumentException;
+import com.itextpdf.text.Element;
+import com.itextpdf.text.Font;
+import com.itextpdf.text.FontFactory;
+import com.itextpdf.text.Paragraph;
+import com.itextpdf.text.pdf.PdfWriter;
+import org.springframework.stereotype.Service;
+
+import java.io.ByteArrayOutputStream;
+import java.time.format.DateTimeFormatter;
+
+@Service
+public class TicketPdfGeneratorService {
+
+    public byte[] generateTicketPdf(BookingResponse booking) throws DocumentException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        Document document = new Document();
+        PdfWriter.getInstance(document, out);
+        document.open();
+
+        Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20);
+        Font subtitleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 14);
+        Font regularFont = FontFactory.getFont(FontFactory.HELVETICA, 12);
+
+        // Header
+        Paragraph header = new Paragraph("CINE RESERVE - MOVIE TICKET", titleFont);
+        header.setAlignment(Element.ALIGN_CENTER);
+        header.setSpacingAfter(20);
+        document.add(header);
+
+        // Movie Info
+        document.add(new Paragraph("Movie: " + booking.getMovieTitle(), subtitleFont));
+        
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd MMM yyyy, hh:mm a");
+        document.add(new Paragraph("Showtime: " + booking.getShowtime().format(formatter), regularFont));
+        
+        document.add(new Paragraph("Theater: " + booking.getTheaterName(), regularFont));
+        document.add(new Paragraph("Screen: " + booking.getScreenName(), regularFont));
+        
+        document.add(new Paragraph("\n"));
+
+        // Seats & Amount
+        document.add(new Paragraph("Seats: " + String.join(", ", booking.getBookedSeats()), subtitleFont));
+        document.add(new Paragraph("Total Amount: INR " + booking.getTotalAmount(), regularFont));
+        document.add(new Paragraph("Booking ID: " + booking.getId(), regularFont));
+
+        document.add(new Paragraph("\n\n"));
+        Paragraph footer = new Paragraph("Please present this ticket at the entrance.", regularFont);
+        footer.setAlignment(Element.ALIGN_CENTER);
+        document.add(footer);
+
+        document.close();
+        return out.toByteArray();
+    }
+}
+
