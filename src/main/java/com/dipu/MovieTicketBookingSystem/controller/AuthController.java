@@ -10,7 +10,8 @@ import com.dipu.MovieTicketBookingSystem.service.AuthService;
 import com.dipu.MovieTicketBookingSystem.service.PasswordResetService;
 import com.dipu.MovieTicketBookingSystem.security.CustomUserDetails;
 import com.dipu.MovieTicketBookingSystem.util.AppConstants;
-import jakarta.servlet.http.Cookie;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseCookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -50,26 +51,30 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody AuthRequest authReq, HttpServletRequest request, HttpServletResponse response) {
         AuthResponse authResponse = authService.login(authReq);
+        ResponseCookie springCookie = ResponseCookie.from(AppConstants.COOKIE_NAME_TOKEN, authResponse.getToken())
+                .httpOnly(true)
+                .secure(true)
+                .path("/")
+                .maxAge(AppConstants.COOKIE_MAX_AGE_7_DAYS)
+                .sameSite("None")
+                .build();
         
-        Cookie cookie = new Cookie(AppConstants.COOKIE_NAME_TOKEN, authResponse.getToken());
-        cookie.setHttpOnly(true);
-        cookie.setSecure(true);
-        cookie.setPath("/");
-        cookie.setMaxAge(AppConstants.COOKIE_MAX_AGE_7_DAYS); 
-        
-        response.addCookie(cookie);
+        response.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
         
         return ResponseEntity.ok(authResponse);
     }
     
     @PostMapping("/logout")
     public ResponseEntity<String> logout(HttpServletRequest request, HttpServletResponse response) {
-        Cookie cookie = new Cookie(AppConstants.COOKIE_NAME_TOKEN, "");
-        cookie.setHttpOnly(true);
-        cookie.setSecure(true);
-        cookie.setPath("/");
-        cookie.setMaxAge(0);
-        response.addCookie(cookie);
+        ResponseCookie springCookie = ResponseCookie.from(AppConstants.COOKIE_NAME_TOKEN, "")
+                .httpOnly(true)
+                .secure(true)
+                .path("/")
+                .maxAge(0)
+                .sameSite("None")
+                .build();
+                
+        response.addHeader(HttpHeaders.SET_COOKIE, springCookie.toString());
         return ResponseEntity.ok("Logged out successfully");
     }
 
