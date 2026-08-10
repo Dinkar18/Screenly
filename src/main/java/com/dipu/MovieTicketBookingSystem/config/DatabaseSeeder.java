@@ -31,9 +31,9 @@ public class DatabaseSeeder implements CommandLineRunner {
                 .build();
             
             userRepository.save(admin);
-            System.out.println("\n✅ Default Admin User created successfully!");
-            System.out.println("📧 Email: admin@screenly.com");
-            System.out.println("🔑 Password: [PROTECTED]\n");
+            System.out.println("\n Default Admin User created successfully!");
+            System.out.println(" Email: admin@screenly.com");
+            System.out.println(" Password: [PROTECTED]\n");
         }
     }
 }
