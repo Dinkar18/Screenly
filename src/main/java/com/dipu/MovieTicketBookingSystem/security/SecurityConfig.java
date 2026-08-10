@@ -75,11 +75,16 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
         
-        List<String> cleanedOrigins = allowedOrigins.stream()
+        List<String> cleanedOrigins = new java.util.ArrayList<>(allowedOrigins.stream()
                 .map(origin -> origin.endsWith("/") ? origin.substring(0, origin.length() - 1) : origin)
-                .toList();
+                .toList());
                 
-        configuration.setAllowedOrigins(cleanedOrigins);
+        // Automatically allow any Vercel preview domain to prevent CORS errors during testing
+        if (!cleanedOrigins.contains("https://*.vercel.app")) {
+            cleanedOrigins.add("https://*.vercel.app");
+        }
+                
+        configuration.setAllowedOriginPatterns(cleanedOrigins);
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers", "idempotency-key"));
         configuration.setExposedHeaders(Arrays.asList("Access-Control-Allow-Origin", "Access-Control-Allow-Credentials"));
