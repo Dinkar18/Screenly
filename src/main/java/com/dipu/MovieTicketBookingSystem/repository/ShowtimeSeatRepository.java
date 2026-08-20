@@ -14,7 +14,9 @@ import java.util.UUID;
 @Repository
 public interface ShowtimeSeatRepository extends JpaRepository<ShowtimeSeat, UUID> {
     
-    List<ShowtimeSeat> findByShowtimeId(UUID showtimeId);
+    // Fix N+1 Query Problem: Use JOIN FETCH to grab the underlying Seat entity in 1 query instead of 200 queries
+    @Query("SELECT s FROM ShowtimeSeat s JOIN FETCH s.seat WHERE s.showtime.id = :showtimeId")
+    List<ShowtimeSeat> findByShowtimeId(@Param("showtimeId") UUID showtimeId);
 
     // CRITICAL: Pessimistic locking to prevent double bookings
     @Lock(LockModeType.PESSIMISTIC_WRITE)

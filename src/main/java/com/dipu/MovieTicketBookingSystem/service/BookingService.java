@@ -137,7 +137,7 @@ public class BookingService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        org.springframework.data.domain.Page<Booking> bookingPage = bookingRepository.findByUserIdOrderByCreatedAtDesc(user.getId(), pageable);
+        org.springframework.data.domain.Page<Booking> bookingPage = bookingRepository.findByUserIdAndStatusOrderByCreatedAtDesc(user.getId(), BookingStatus.CONFIRMED, pageable);
         List<BookingResponse> responses = bookingPage.getContent().stream()
                 .map(booking -> {
                     // Fetch seats for this booking

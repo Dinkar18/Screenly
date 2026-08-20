@@ -16,4 +16,7 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
 
     // Get booking history for a user
     org.springframework.data.domain.Page<Booking> findByUserIdOrderByCreatedAtDesc(UUID userId, org.springframework.data.domain.Pageable pageable);
+
+    // Get ONLY confirmed bookings for the frontend dashboard
+    org.springframework.data.domain.Page<Booking> findByUserIdAndStatusOrderByCreatedAtDesc(UUID userId, com.dipu.MovieTicketBookingSystem.model.enums.BookingStatus status, org.springframework.data.domain.Pageable pageable);
 }
