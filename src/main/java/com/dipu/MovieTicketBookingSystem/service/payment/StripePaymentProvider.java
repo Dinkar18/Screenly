@@ -1,5 +1,5 @@
 package com.dipu.MovieTicketBookingSystem.service.payment;
-import com.dipu.MovieTicketBookingSystem.service.BookingService;
+
 import com.dipu.MovieTicketBookingSystem.dto.PaymentIntentResponse;
 import com.dipu.MovieTicketBookingSystem.model.entity.Booking;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -28,7 +28,6 @@ public class StripePaymentProvider implements PaymentProvider {
 
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper;
-    private final BookingService bookingService;
 
     @Override
     public PaymentIntentResponse createPaymentIntent(Booking booking) throws Exception {
@@ -57,15 +56,6 @@ public class StripePaymentProvider implements PaymentProvider {
         if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
             JsonNode root = objectMapper.readTree(response.getBody());
             String clientSecret = root.path("client_secret").asText();
-            
-            // This bypasses the need for the Stripe Webhook which isn't configured in the Render environment!
-            try {
-                bookingService.confirmBooking(booking.getId());
-                log.info("Automatically confirmed booking {} for demo bypass", booking.getId());
-            } catch (Exception e) {
-                log.error("Failed to auto-confirm booking: {}", e.getMessage());
-            }
-            
             log.info("Successfully created Stripe PaymentIntent (Lightweight)");
             return new PaymentIntentResponse(clientSecret);
         } else {
