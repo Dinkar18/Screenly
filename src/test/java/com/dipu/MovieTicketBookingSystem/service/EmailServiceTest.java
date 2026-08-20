@@ -18,4 +18,3 @@ public class EmailServiceTest {
         // Test disabled. We would mock RestTemplate or WebClient if we wanted to unit test the HTTP call.
     }
 }
-}
