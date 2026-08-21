@@ -39,12 +39,31 @@ public class BookingService {
 
     public List<SeatResponse> getSeatsForShowtime(UUID showtimeId) {
         return showtimeSeatRepository.findByShowtimeId(showtimeId).stream()
-                .map(s -> SeatResponse.builder()
-                        .showtimeSeatId(s.getId())
-                        .seatIdentifier(s.getSeat().getSeatIdentifier())
-                        .status(s.getStatus())
-                        .build())
+                .map(this::mapToShowtimeSeatResponse)
+                .sorted(java.util.Comparator.comparingInt(SeatResponse::getRowNumber)
+                        .thenComparing(SeatResponse::getSeatLetter))
                 .collect(Collectors.toList());
+    }
+
+    private SeatResponse mapToShowtimeSeatResponse(ShowtimeSeat s) {
+        String identifier = s.getSeat().getSeatIdentifier();
+        int rowNumber = 1;
+        String seatLetter = "A";
+
+        // Clean standard: Backend extracts business domain fields explicitly
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("^(\\d+)([A-Za-z]+)$").matcher(identifier);
+        if (matcher.matches()) {
+            rowNumber = Integer.parseInt(matcher.group(1));
+            seatLetter = matcher.group(2).toUpperCase();
+        }
+
+        return SeatResponse.builder()
+                .showtimeSeatId(s.getId())
+                .seatIdentifier(identifier)
+                .rowNumber(rowNumber)
+                .seatLetter(seatLetter)
+                .status(s.getStatus())
+                .build();
     }
 
     @Transactional

@@ -14,6 +14,8 @@ import java.util.UUID;
 @AllArgsConstructor
 public class SeatResponse {
     private UUID showtimeSeatId;
-    private String seatIdentifier; // e.g. "A1"
+    private String seatIdentifier; // e.g. "A1" (Legacy)
+    private int rowNumber;         // Clean standard
+    private String seatLetter;     // Clean standard
     private SeatStatus status;
 }
