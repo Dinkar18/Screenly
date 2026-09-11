@@ -17,5 +17,5 @@ COPY --from=build /app/target/*.jar app.jar
 # Expose port
 EXPOSE 8080
 
-# Run the application with strictly constrained memory flags for 512MB RAM
-ENTRYPOINT ["java", "-Xmx256m", "-Xms256m", "-XX:MaxMetaspaceSize=128m", "-Xss512k", "-XX:+UseSerialGC", "-jar", "app.jar"]
+# Run the application with optimized memory flags for 512MB RAM container
+ENTRYPOINT ["java", "-Xmx180m", "-Xms100m", "-XX:MaxMetaspaceSize=96m", "-Xss256k", "-XX:+UseSerialGC", "-XX:+TieredCompilation", "-XX:TieredStopAtLevel=1", "-jar", "app.jar"]
