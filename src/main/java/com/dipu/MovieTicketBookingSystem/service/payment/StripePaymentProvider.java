@@ -26,7 +26,7 @@ public class StripePaymentProvider implements PaymentProvider {
     @Value("${stripe.api.key}")
     private String stripeApiKey;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
     @Override

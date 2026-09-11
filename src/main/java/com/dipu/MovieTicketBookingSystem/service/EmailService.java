@@ -1,5 +1,6 @@
 package com.dipu.MovieTicketBookingSystem.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpEntity;
@@ -17,6 +18,7 @@ import java.util.Map;
 
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class EmailService {
 
     @Value("${brevo.api.key:}")
@@ -24,6 +26,8 @@ public class EmailService {
 
     @Value("${spring.mail.username:}")
     private String fromEmail;
+
+    private final RestTemplate restTemplate;
 
     @Async
     public void sendEmail(String to, String subject, String text) {
@@ -40,7 +44,6 @@ public class EmailService {
         try {
             log.info("Sending transactional email via Brevo REST API to: {} | Subject: {}", to, subject);
             
-            RestTemplate restTemplate = new RestTemplate();
             String url = "https://api.brevo.com/v3/smtp/email";
 
             HttpHeaders headers = new HttpHeaders();

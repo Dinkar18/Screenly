@@ -31,6 +31,14 @@ public class WebMvcConfig implements WebMvcConfigurer {
         return mapper;
     }
 
+    @Bean
+    public org.springframework.web.client.RestTemplate restTemplate() {
+        org.springframework.http.client.SimpleClientHttpRequestFactory factory = new org.springframework.http.client.SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(5000);
+        return new org.springframework.web.client.RestTemplate(factory);
+    }
+
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/**")
