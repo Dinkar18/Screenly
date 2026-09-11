@@ -1,12 +1,16 @@
 package com.dipu.MovieTicketBookingSystem.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 @Data
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class ResetPasswordRequest {
+
+    private String email;
 
     @NotBlank(message = "OTP token is required")
     private String token;

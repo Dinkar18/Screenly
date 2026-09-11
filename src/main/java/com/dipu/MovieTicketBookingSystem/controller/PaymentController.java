@@ -1,13 +1,15 @@
 package com.dipu.MovieTicketBookingSystem.controller;
 
-import com.dipu.MovieTicketBookingSystem.dto.PaymentIntentResponse;
 import com.dipu.MovieTicketBookingSystem.dto.MessageResponse;
+import com.dipu.MovieTicketBookingSystem.dto.PaymentIntentResponse;
+import com.dipu.MovieTicketBookingSystem.service.BookingService;
 import com.dipu.MovieTicketBookingSystem.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
 import java.util.UUID;
 
 @RestController
@@ -17,7 +19,7 @@ import java.util.UUID;
 public class PaymentController {
 
     private final PaymentService paymentService;
-    private final com.dipu.MovieTicketBookingSystem.service.BookingService bookingService;
+    private final BookingService bookingService;
 
     @PostMapping("/create-intent/{bookingId}")
     @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN')")
@@ -32,4 +34,11 @@ public class PaymentController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/confirm/{bookingId}")
+    @PreAuthorize("hasRole('CUSTOMER') or hasRole('ADMIN')")
+    public ResponseEntity<MessageResponse> confirmPayment(@PathVariable UUID bookingId) {
+        log.info("Request received to directly confirm booking ID: {}", bookingId);
+        bookingService.confirmBooking(bookingId);
+        return ResponseEntity.ok(new MessageResponse("Booking confirmed successfully"));
+    }
 }

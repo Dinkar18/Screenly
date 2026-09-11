@@ -152,6 +152,7 @@ public class BookingService {
         notificationService.sendBookingConfirmation(response, booking.getUser().getEmail());
     }
 
+    @Transactional(readOnly = true)
     public com.dipu.MovieTicketBookingSystem.dto.PageResponse<BookingResponse> getMyBookings(String userEmail, org.springframework.data.domain.Pageable pageable) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -183,6 +184,11 @@ public class BookingService {
                 .map(s -> s.getSeat().getSeatIdentifier())
                 .collect(Collectors.toList());
 
+        String posterUrl = null;
+        if (booking.getShowtime() != null && booking.getShowtime().getMovie() != null) {
+            posterUrl = booking.getShowtime().getMovie().getPosterUrl();
+        }
+
         return BookingResponse.builder()
                 .id(booking.getId())
                 .userId(booking.getUser().getId())
@@ -193,6 +199,7 @@ public class BookingService {
                 .bookedSeats(seatNumbers)
                 .totalAmount(booking.getTotalAmount())
                 .status(booking.getStatus())
+                .posterUrl(posterUrl)
                 .createdAt(booking.getCreatedAt())
                 .build();
     }

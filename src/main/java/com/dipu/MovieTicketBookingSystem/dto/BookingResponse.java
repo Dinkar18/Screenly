@@ -25,5 +25,6 @@ public class BookingResponse {
     private List<String> bookedSeats;
     private BigDecimal totalAmount;
     private BookingStatus status;
+    private String posterUrl;
     private LocalDateTime createdAt;
 }
