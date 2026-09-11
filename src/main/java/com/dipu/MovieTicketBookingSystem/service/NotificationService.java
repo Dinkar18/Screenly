@@ -10,6 +10,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Base64;
@@ -23,16 +24,27 @@ import java.util.Map;
 public class NotificationService {
 
     private final TicketPdfGeneratorService ticketPdfGeneratorService;
+    private final RestTemplate restTemplate;
 
-    @Value("${brevo.api.key}")
+    @Value("${brevo.api.key:}")
     private String apiKey;
 
-    @Value("${spring.mail.username}")
+    @Value("${spring.mail.username:}")
     private String fromEmail;
 
     @Async
     public void sendBookingConfirmation(BookingResponse bookingResponse, String userEmail) {
         log.info("Starting background task to generate PDF and send email to {}", userEmail);
+
+        if (apiKey == null || apiKey.isBlank()) {
+            log.warn("NOTIFICATION EMAIL SKIPPED: 'BREVO_API_KEY' is not configured.");
+            return;
+        }
+
+        if (fromEmail == null || fromEmail.isBlank()) {
+            log.warn("NOTIFICATION EMAIL SKIPPED: 'MAIL_USERNAME' is not configured.");
+            return;
+        }
 
         try {
             // 1. Generate PDF Ticket
@@ -40,16 +52,15 @@ public class NotificationService {
             String base64Pdf = Base64.getEncoder().encodeToString(pdfBytes);
 
             // 2. Send Email with Attachment using Brevo REST API
-            RestTemplate restTemplate = new RestTemplate();
             String url = "https://api.brevo.com/v3/smtp/email";
 
             HttpHeaders headers = new HttpHeaders();
-            headers.set("api-key", apiKey);
+            headers.set("api-key", apiKey.trim());
             headers.set("Content-Type", "application/json");
 
             Map<String, Object> body = new HashMap<>();
-            body.put("sender", Map.of("email", fromEmail, "name", "CineReserve"));
-            body.put("to", List.of(Map.of("email", userEmail)));
+            body.put("sender", Map.of("email", fromEmail.trim(), "name", "Screenly"));
+            body.put("to", List.of(Map.of("email", userEmail.trim())));
             body.put("subject", "Your Movie Ticket - " + bookingResponse.getMovieTitle());
             body.put("textContent", "Hi there,\n\nYour booking is confirmed! Please find your PDF ticket attached to this email.\n\nPlease arrive 15 minutes early.\n\nEnjoy the movie!");
             
@@ -66,9 +77,11 @@ public class NotificationService {
 
         } catch (com.itextpdf.text.DocumentException e) {
             log.error("Failed to generate PDF for booking {}: {}", bookingResponse.getId(), e.getMessage());
+        } catch (RestClientResponseException e) {
+            log.error("Brevo API Rejected Ticket Email to {}: HTTP {} - Response Body: {}", 
+                    userEmail, e.getStatusCode(), e.getResponseBodyAsString(), e);
         } catch (Exception e) {
-            log.error("Failed to send email to {} for booking {}: {}", userEmail, bookingResponse.getId(), e.getMessage());
-            e.printStackTrace();
+            log.error("Failed to send email to {} for booking {}: {}", userEmail, bookingResponse.getId(), e.getMessage(), e);
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.dipu.MovieTicketBookingSystem.dto;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Future;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -30,5 +31,6 @@ public class ShowtimeRequest {
 
     @NotNull(message = "Price is required")
     @Positive(message = "Price must be greater than zero")
+    @DecimalMin(value = "50.00", message = "Ticket price must be at least ₹50.00 to satisfy online payment gateway minimums")
     private BigDecimal price;
 }

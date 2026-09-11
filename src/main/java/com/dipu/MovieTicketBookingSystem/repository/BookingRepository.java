@@ -20,6 +20,9 @@ public interface BookingRepository extends JpaRepository<Booking, UUID> {
     // Get ONLY confirmed bookings for the frontend dashboard
     org.springframework.data.domain.Page<Booking> findByUserIdAndStatusOrderByCreatedAtDesc(UUID userId, com.dipu.MovieTicketBookingSystem.model.enums.BookingStatus status, org.springframework.data.domain.Pageable pageable);
 
+    // Find pending/unconfirmed bookings created before a threshold for background expiration cleanup
+    List<Booking> findByStatusAndCreatedAtBefore(com.dipu.MovieTicketBookingSystem.model.enums.BookingStatus status, java.time.LocalDateTime threshold);
+
     // Check if any confirmed bookings exist for future showtimes at a specific theater
     @org.springframework.data.jpa.repository.Query(
         "SELECT COUNT(b) > 0 FROM Booking b " +

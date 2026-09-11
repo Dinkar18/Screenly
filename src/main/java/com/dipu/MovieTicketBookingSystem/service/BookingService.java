@@ -13,14 +13,17 @@ import com.dipu.MovieTicketBookingSystem.repository.BookingRepository;
 import com.dipu.MovieTicketBookingSystem.repository.ShowtimeRepository;
 import com.dipu.MovieTicketBookingSystem.repository.ShowtimeSeatRepository;
 import com.dipu.MovieTicketBookingSystem.repository.UserRepository;
+import com.dipu.MovieTicketBookingSystem.exception.InvalidOperationException;
 import com.dipu.MovieTicketBookingSystem.exception.ResourceNotFoundException;
 import com.dipu.MovieTicketBookingSystem.exception.SeatUnavailableException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -76,8 +79,9 @@ public class BookingService {
         Showtime showtime = showtimeRepository.findById(request.getShowtimeId())
                 .orElseThrow(() -> new ResourceNotFoundException("Showtime not found"));
 
-        // 2. Pessimistic Locking: Lock the requested seats to prevent concurrent double-booking
-        List<ShowtimeSeat> requestedSeats = showtimeSeatRepository.findByIdsForUpdate(request.getShowtimeSeatIds());
+        // 2. Pessimistic Locking with deterministic ordering to prevent deadlocks under high concurrency
+        List<UUID> sortedSeatIds = request.getShowtimeSeatIds().stream().sorted().toList();
+        List<ShowtimeSeat> requestedSeats = showtimeSeatRepository.findByIdsForUpdate(sortedSeatIds);
         
         if (requestedSeats.size() != request.getShowtimeSeatIds().size()) {
             throw new IllegalArgumentException("One or more requested seats are invalid");
@@ -88,11 +92,11 @@ public class BookingService {
             throw new IllegalArgumentException("Seat does not belong to this showtime");
         }
 
-        // 3. Status Verification (If any seat is booked, the whole transaction rolls back)
+        // 3. Status Verification (If any seat is booked/reserved, the whole transaction rolls back)
         for (ShowtimeSeat seat : requestedSeats) {
             if (seat.getStatus() != SeatStatus.AVAILABLE) {
                 log.warn("Seat {} is no longer available", seat.getSeat().getSeatIdentifier());
-                throw new SeatUnavailableException("Seat " + seat.getSeat().getSeatIdentifier() + " is already booked by someone else!");
+                throw new SeatUnavailableException("Seat " + seat.getSeat().getSeatIdentifier() + " is already booked or on hold by someone else!");
             }
         }
 
@@ -110,7 +114,7 @@ public class BookingService {
         
         Booking savedBooking = bookingRepository.save(booking);
 
-        // 6. Update seats to RESERVED
+        // 6. Update seats to RESERVED (2-Phase hold)
         for (ShowtimeSeat seat : requestedSeats) {
             seat.setStatus(SeatStatus.RESERVED);
             seat.setBooking(savedBooking);
@@ -150,6 +154,63 @@ public class BookingService {
         BookingResponse response = mapToResponse(booking, seats);
         // Fire Asynchronous Event (Generate PDF and Email)
         notificationService.sendBookingConfirmation(response, booking.getUser().getEmail());
+    }
+
+    /**
+     * Cancel an unconfirmed/pending booking and immediately release its seats back to AVAILABLE.
+     */
+    @Transactional
+    public void cancelBooking(UUID bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new ResourceNotFoundException("Booking not found"));
+
+        if (booking.getStatus() == BookingStatus.CONFIRMED) {
+            throw new InvalidOperationException("Cannot cancel an already confirmed booking through this endpoint");
+        }
+
+        if (booking.getStatus() == BookingStatus.CANCELLED) {
+            log.info("Booking {} is already cancelled.", bookingId);
+            return;
+        }
+
+        booking.setStatus(BookingStatus.CANCELLED);
+        bookingRepository.save(booking);
+
+        // Release seats associated with this booking
+        List<ShowtimeSeat> seats = showtimeSeatRepository.findByShowtimeId(booking.getShowtime().getId()).stream()
+                .filter(s -> booking.getId().equals(s.getBooking() != null ? s.getBooking().getId() : null))
+                .collect(Collectors.toList());
+
+        for (ShowtimeSeat seat : seats) {
+            seat.setStatus(SeatStatus.AVAILABLE);
+            seat.setBooking(null);
+        }
+        showtimeSeatRepository.saveAll(seats);
+
+        log.info("Successfully cancelled booking {} and released {} seats back to AVAILABLE", bookingId, seats.size());
+    }
+
+    /**
+     * Background cron worker running every 60 seconds to automatically release any abandoned
+     * PENDING bookings older than 10 minutes.
+     */
+    @Scheduled(fixedRate = 60000)
+    @Transactional
+    public void cleanupExpiredBookings() {
+        LocalDateTime expirationThreshold = LocalDateTime.now().minusMinutes(10);
+        List<Booking> expiredPendingBookings = bookingRepository.findByStatusAndCreatedAtBefore(
+                BookingStatus.PENDING, expirationThreshold);
+
+        if (!expiredPendingBookings.isEmpty()) {
+            log.info("Found {} expired pending bookings older than 10 minutes. Releasing seats...", expiredPendingBookings.size());
+            for (Booking booking : expiredPendingBookings) {
+                try {
+                    cancelBooking(booking.getId());
+                } catch (Exception e) {
+                    log.error("Failed to release expired booking {}: {}", booking.getId(), e.getMessage());
+                }
+            }
+        }
     }
 
     @Transactional(readOnly = true)

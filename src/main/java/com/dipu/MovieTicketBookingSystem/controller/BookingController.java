@@ -49,4 +49,10 @@ public class BookingController {
         org.springframework.data.domain.PageRequest pageRequest = org.springframework.data.domain.PageRequest.of(page, size);
         return ResponseEntity.ok(bookingService.getMyBookings(userEmail, pageRequest));
     }
+
+    @PostMapping("/bookings/{bookingId}/cancel")
+    public ResponseEntity<?> cancelBooking(@PathVariable UUID bookingId) {
+        bookingService.cancelBooking(bookingId);
+        return ResponseEntity.ok(java.util.Map.of("message", "Booking cancelled successfully and seats released"));
+    }
 }

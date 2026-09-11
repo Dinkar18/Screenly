@@ -18,6 +18,7 @@ public class PaymentService {
 
     private final BookingRepository bookingRepository;
     private final PaymentProviderFactory providerFactory;
+    private final BookingService bookingService;
 
     public PaymentIntentResponse createPaymentIntent(java.util.UUID bookingId, String paymentMethod) throws Exception {
         Booking booking = bookingRepository.findById(bookingId)
@@ -27,10 +28,20 @@ public class PaymentService {
             throw new InvalidOperationException("Booking is already confirmed");
         }
 
-        // 1. Get the correct provider dynamically (defaults to Stripe if null)
-        PaymentProvider paymentProvider = providerFactory.getProvider(paymentMethod);
+        try {
+            // 1. Get the correct provider dynamically (defaults to Stripe if null)
+            PaymentProvider paymentProvider = providerFactory.getProvider(paymentMethod);
 
-        // 2. Delegate intent creation to the provider
-        return paymentProvider.createPaymentIntent(booking);
+            // 2. Delegate intent creation to the provider
+            return paymentProvider.createPaymentIntent(booking);
+        } catch (Exception e) {
+            log.error("Failed to create payment intent for booking ID {}. Releasing reserved seats immediately: {}", bookingId, e.getMessage());
+            try {
+                bookingService.cancelBooking(bookingId);
+            } catch (Exception cancelEx) {
+                log.error("Error compensating booking cancellation for ID {}: {}", bookingId, cancelEx.getMessage());
+            }
+            throw e;
+        }
     }
 }
