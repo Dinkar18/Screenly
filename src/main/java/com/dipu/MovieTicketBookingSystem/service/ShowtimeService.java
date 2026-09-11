@@ -2,17 +2,23 @@ package com.dipu.MovieTicketBookingSystem.service;
 
 import com.dipu.MovieTicketBookingSystem.dto.ShowtimeRequest;
 import com.dipu.MovieTicketBookingSystem.dto.ShowtimeResponse;
+import com.dipu.MovieTicketBookingSystem.exception.InvalidOperationException;
+import com.dipu.MovieTicketBookingSystem.exception.ResourceNotFoundException;
 import com.dipu.MovieTicketBookingSystem.model.entity.Movie;
 import com.dipu.MovieTicketBookingSystem.model.entity.Screen;
+import com.dipu.MovieTicketBookingSystem.model.entity.Seat;
 import com.dipu.MovieTicketBookingSystem.model.entity.Showtime;
+import com.dipu.MovieTicketBookingSystem.model.entity.ShowtimeSeat;
+import com.dipu.MovieTicketBookingSystem.model.enums.SeatStatus;
 import com.dipu.MovieTicketBookingSystem.repository.MovieRepository;
 import com.dipu.MovieTicketBookingSystem.repository.ScreenRepository;
+import com.dipu.MovieTicketBookingSystem.repository.SeatRepository;
 import com.dipu.MovieTicketBookingSystem.repository.ShowtimeRepository;
-import com.dipu.MovieTicketBookingSystem.exception.ResourceNotFoundException;
-import com.dipu.MovieTicketBookingSystem.exception.InvalidOperationException;
+import com.dipu.MovieTicketBookingSystem.repository.ShowtimeSeatRepository;
 import com.dipu.MovieTicketBookingSystem.util.AppConstants;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -21,13 +27,14 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class ShowtimeService {
 
     private final ShowtimeRepository showtimeRepository;
     private final MovieRepository movieRepository;
     private final ScreenRepository screenRepository;
-    private final com.dipu.MovieTicketBookingSystem.repository.SeatRepository seatRepository;
-    private final com.dipu.MovieTicketBookingSystem.repository.ShowtimeSeatRepository showtimeSeatRepository;
+    private final SeatRepository seatRepository;
+    private final ShowtimeSeatRepository showtimeSeatRepository;
 
     public ShowtimeResponse createShowtime(ShowtimeRequest request) {
         Movie movie = movieRepository.findById(request.getMovieId())
@@ -60,12 +67,12 @@ public class ShowtimeService {
         Showtime savedShowtime = showtimeRepository.save(showtime);
 
         // Auto-generate ShowtimeSeat entries for every physical seat in this screen
-        List<com.dipu.MovieTicketBookingSystem.model.entity.Seat> seats = seatRepository.findByScreenId(screen.getId());
-        List<com.dipu.MovieTicketBookingSystem.model.entity.ShowtimeSeat> showtimeSeats = seats.stream()
-                .map(seat -> com.dipu.MovieTicketBookingSystem.model.entity.ShowtimeSeat.builder()
+        List<Seat> seats = seatRepository.findByScreenId(screen.getId());
+        List<ShowtimeSeat> showtimeSeats = seats.stream()
+                .map(seat -> ShowtimeSeat.builder()
                         .showtime(savedShowtime)
                         .seat(seat)
-                        .status(com.dipu.MovieTicketBookingSystem.model.enums.SeatStatus.AVAILABLE)
+                        .status(SeatStatus.AVAILABLE)
                         .build())
                 .collect(Collectors.toList());
         showtimeSeatRepository.saveAll(showtimeSeats);
@@ -125,8 +132,8 @@ public class ShowtimeService {
         Showtime showtime = showtimeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Showtime not found"));
         
-        List<com.dipu.MovieTicketBookingSystem.model.entity.ShowtimeSeat> seats = showtimeSeatRepository.findByShowtimeId(id);
-        boolean hasBookings = seats.stream().anyMatch(s -> s.getStatus() == com.dipu.MovieTicketBookingSystem.model.enums.SeatStatus.BOOKED);
+        List<ShowtimeSeat> seats = showtimeSeatRepository.findByShowtimeId(id);
+        boolean hasBookings = seats.stream().anyMatch(s -> s.getStatus() == SeatStatus.BOOKED);
         
         if (hasBookings) {
             throw new InvalidOperationException("Cannot delete showtime because it has active bookings.");

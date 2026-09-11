@@ -1,6 +1,7 @@
 package com.dipu.MovieTicketBookingSystem.repository;
 
 import com.dipu.MovieTicketBookingSystem.model.entity.Showtime;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,11 +15,11 @@ import java.util.UUID;
 public interface ShowtimeRepository extends JpaRepository<Showtime, UUID> {
     
     // Find all future active showtimes for a specific movie
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"movie", "screen", "screen.theater"})
+    @EntityGraph(attributePaths = {"movie", "screen", "screen.theater"})
     List<Showtime> findByMovieIdAndStartTimeAfterAndIsActiveTrueOrderByStartTimeAsc(UUID movieId, LocalDateTime now);
 
     // Find all future showtimes for a specific theater
-    @org.springframework.data.jpa.repository.EntityGraph(attributePaths = {"movie", "screen", "screen.theater"})
+    @EntityGraph(attributePaths = {"movie", "screen", "screen.theater"})
     @Query("SELECT s FROM Showtime s WHERE s.screen.theater.id = :theaterId AND s.startTime > :now AND s.isActive = true ORDER BY s.startTime ASC")
     List<Showtime> findFutureShowtimesByTheater(@Param("theaterId") UUID theaterId, @Param("now") LocalDateTime now);
     

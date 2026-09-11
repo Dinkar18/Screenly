@@ -4,29 +4,36 @@ import com.dipu.MovieTicketBookingSystem.dto.ScreenRequest;
 import com.dipu.MovieTicketBookingSystem.dto.ScreenResponse;
 import com.dipu.MovieTicketBookingSystem.dto.TheaterRequest;
 import com.dipu.MovieTicketBookingSystem.dto.TheaterResponse;
+import com.dipu.MovieTicketBookingSystem.exception.InvalidOperationException;
+import com.dipu.MovieTicketBookingSystem.exception.ResourceNotFoundException;
 import com.dipu.MovieTicketBookingSystem.model.entity.Screen;
 import com.dipu.MovieTicketBookingSystem.model.entity.Seat;
+import com.dipu.MovieTicketBookingSystem.model.entity.Showtime;
 import com.dipu.MovieTicketBookingSystem.model.entity.Theater;
+import com.dipu.MovieTicketBookingSystem.repository.BookingRepository;
 import com.dipu.MovieTicketBookingSystem.repository.ScreenRepository;
+import com.dipu.MovieTicketBookingSystem.repository.SeatRepository;
+import com.dipu.MovieTicketBookingSystem.repository.ShowtimeRepository;
 import com.dipu.MovieTicketBookingSystem.repository.TheaterRepository;
-import com.dipu.MovieTicketBookingSystem.exception.ResourceNotFoundException;
-import com.dipu.MovieTicketBookingSystem.exception.InvalidOperationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional
 public class TheaterService {
 
     private final TheaterRepository theaterRepository;
     private final ScreenRepository screenRepository;
-    private final com.dipu.MovieTicketBookingSystem.repository.SeatRepository seatRepository;
-    private final com.dipu.MovieTicketBookingSystem.repository.ShowtimeRepository showtimeRepository;
-    private final com.dipu.MovieTicketBookingSystem.repository.BookingRepository bookingRepository;
+    private final SeatRepository seatRepository;
+    private final ShowtimeRepository showtimeRepository;
+    private final BookingRepository bookingRepository;
 
     // --- Theater Operations ---
 
@@ -41,12 +48,14 @@ public class TheaterService {
         return mapToTheaterResponse(savedTheater);
     }
 
+    @Transactional(readOnly = true)
     public List<TheaterResponse> getAllTheaters() {
         return theaterRepository.findByIsActiveTrue().stream()
                 .map(this::mapToTheaterResponse)
                 .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
     public TheaterResponse getTheaterById(UUID id) {
         Theater theater = theaterRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Theater not found"));
@@ -70,7 +79,7 @@ public class TheaterService {
                 .orElseThrow(() -> new ResourceNotFoundException("Theater not found"));
         
         // 1. Check if customers have already purchased tickets for future shows at this theater
-        boolean hasActiveBookings = bookingRepository.existsActiveFutureBookingsByTheater(id, java.time.LocalDateTime.now());
+        boolean hasActiveBookings = bookingRepository.existsActiveFutureBookingsByTheater(id, LocalDateTime.now());
         if (hasActiveBookings) {
             throw new InvalidOperationException("Cannot delete theater because customers have active bookings for upcoming shows. Please cancel and refund those bookings first.");
         }
@@ -84,7 +93,7 @@ public class TheaterService {
         }
         
         // 4. Deactivate all unbooked future showtimes automatically
-        List<com.dipu.MovieTicketBookingSystem.model.entity.Showtime> futureShowtimes = showtimeRepository.findFutureShowtimesByTheater(id, java.time.LocalDateTime.now());
+        List<Showtime> futureShowtimes = showtimeRepository.findFutureShowtimesByTheater(id, LocalDateTime.now());
         if (!futureShowtimes.isEmpty()) {
             futureShowtimes.forEach(st -> st.setActive(false));
             showtimeRepository.saveAll(futureShowtimes);
@@ -100,7 +109,7 @@ public class TheaterService {
                 .orElseThrow(() -> new ResourceNotFoundException("Theater not found"));
 
         // Check if screen name already exists in this theater
-        boolean screenExists = theater.getScreens().stream()
+        boolean screenExists = theater.getScreens() != null && theater.getScreens().stream()
                 .anyMatch(s -> s.getName().equalsIgnoreCase(request.getName()));
         
         if (screenExists) {
@@ -115,7 +124,7 @@ public class TheaterService {
 
         Screen savedScreen = screenRepository.save(screen);
 
-        // Auto-generate physical seats (e.g. A1, A2... J10)
+        // Auto-generate physical seats (e.g. 1A, 1B... 10J)
         generateSeatsForScreen(savedScreen);
 
         return mapToScreenResponse(savedScreen);
@@ -151,6 +160,7 @@ public class TheaterService {
         return result.toString();
     }
 
+    @Transactional(readOnly = true)
     public List<ScreenResponse> getScreensByTheaterId(UUID theaterId) {
         // Validate theater exists
         if (!theaterRepository.existsById(theaterId)) {
@@ -176,7 +186,6 @@ public class TheaterService {
         }
 
         screen.setName(request.getName());
-        // Capacity is usually static because seats are generated. We will update the field but not regenerate seats.
         screen.setCapacity(request.getCapacity());
         
         Screen updatedScreen = screenRepository.save(screen);
@@ -188,7 +197,7 @@ public class TheaterService {
                 .orElseThrow(() -> new ResourceNotFoundException("Screen not found"));
         
         // 1. Check if customers have active bookings for future shows on this screen
-        boolean hasActiveBookings = bookingRepository.existsActiveFutureBookingsByScreen(id, java.time.LocalDateTime.now());
+        boolean hasActiveBookings = bookingRepository.existsActiveFutureBookingsByScreen(id, LocalDateTime.now());
         if (hasActiveBookings) {
             throw new InvalidOperationException("Cannot delete screen because customers have active bookings for upcoming shows. Please cancel and refund those bookings first.");
         }
@@ -198,8 +207,8 @@ public class TheaterService {
         screenRepository.save(screen);
 
         // 3. Deactivate all unbooked future showtimes on this screen
-        List<com.dipu.MovieTicketBookingSystem.model.entity.Showtime> futureShowtimes = showtimeRepository.findAll().stream()
-                .filter(s -> s.getScreen().getId().equals(id) && s.isActive() && s.getStartTime().isAfter(java.time.LocalDateTime.now()))
+        List<Showtime> futureShowtimes = showtimeRepository.findAll().stream()
+                .filter(s -> s.getScreen().getId().equals(id) && s.isActive() && s.getStartTime().isAfter(LocalDateTime.now()))
                 .collect(Collectors.toList());
         if (!futureShowtimes.isEmpty()) {
             futureShowtimes.forEach(st -> st.setActive(false));
