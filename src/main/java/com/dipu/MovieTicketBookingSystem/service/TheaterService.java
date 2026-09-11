@@ -26,6 +26,7 @@ public class TheaterService {
     private final ScreenRepository screenRepository;
     private final com.dipu.MovieTicketBookingSystem.repository.SeatRepository seatRepository;
     private final com.dipu.MovieTicketBookingSystem.repository.ShowtimeRepository showtimeRepository;
+    private final com.dipu.MovieTicketBookingSystem.repository.BookingRepository bookingRepository;
 
     // --- Theater Operations ---
 
@@ -68,15 +69,27 @@ public class TheaterService {
         Theater theater = theaterRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Theater not found"));
         
-        List<com.dipu.MovieTicketBookingSystem.model.entity.Showtime> futureShowtimes = showtimeRepository.findFutureShowtimesByTheater(id, java.time.LocalDateTime.now());
-        if (!futureShowtimes.isEmpty()) {
-            throw new InvalidOperationException("Cannot delete theater because it has active future showtimes. Please cancel them first.");
+        // 1. Check if customers have already purchased tickets for future shows at this theater
+        boolean hasActiveBookings = bookingRepository.existsActiveFutureBookingsByTheater(id, java.time.LocalDateTime.now());
+        if (hasActiveBookings) {
+            throw new InvalidOperationException("Cannot delete theater because customers have active bookings for upcoming shows. Please cancel and refund those bookings first.");
         }
 
+        // 2. Soft-delete the theater
         theater.setActive(false);
-        // Soft delete all screens in the theater
-        theater.getScreens().forEach(s -> s.setActive(false));
+
+        // 3. Soft-delete all screens in this theater
+        if (theater.getScreens() != null) {
+            theater.getScreens().forEach(s -> s.setActive(false));
+        }
         
+        // 4. Deactivate all unbooked future showtimes automatically
+        List<com.dipu.MovieTicketBookingSystem.model.entity.Showtime> futureShowtimes = showtimeRepository.findFutureShowtimesByTheater(id, java.time.LocalDateTime.now());
+        if (!futureShowtimes.isEmpty()) {
+            futureShowtimes.forEach(st -> st.setActive(false));
+            showtimeRepository.saveAll(futureShowtimes);
+        }
+
         theaterRepository.save(theater);
     }
 
@@ -174,17 +187,24 @@ public class TheaterService {
         Screen screen = screenRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Screen not found"));
         
-        // Find future showtimes for this screen
+        // 1. Check if customers have active bookings for future shows on this screen
+        boolean hasActiveBookings = bookingRepository.existsActiveFutureBookingsByScreen(id, java.time.LocalDateTime.now());
+        if (hasActiveBookings) {
+            throw new InvalidOperationException("Cannot delete screen because customers have active bookings for upcoming shows. Please cancel and refund those bookings first.");
+        }
+        
+        // 2. Soft-delete the screen
+        screen.setActive(false);
+        screenRepository.save(screen);
+
+        // 3. Deactivate all unbooked future showtimes on this screen
         List<com.dipu.MovieTicketBookingSystem.model.entity.Showtime> futureShowtimes = showtimeRepository.findAll().stream()
                 .filter(s -> s.getScreen().getId().equals(id) && s.isActive() && s.getStartTime().isAfter(java.time.LocalDateTime.now()))
                 .collect(Collectors.toList());
-                
         if (!futureShowtimes.isEmpty()) {
-            throw new InvalidOperationException("Cannot delete screen because it has active future showtimes. Please cancel them first.");
+            futureShowtimes.forEach(st -> st.setActive(false));
+            showtimeRepository.saveAll(futureShowtimes);
         }
-        
-        screen.setActive(false);
-        screenRepository.save(screen);
     }
 
     // --- Mappers ---
