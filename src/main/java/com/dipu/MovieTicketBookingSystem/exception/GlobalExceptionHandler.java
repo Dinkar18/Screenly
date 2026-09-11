@@ -84,6 +84,46 @@ public class GlobalExceptionHandler {
         return problemDetail;
     }
 
+    @ExceptionHandler(org.springframework.security.authentication.BadCredentialsException.class)
+    public ProblemDetail handleBadCredentialsException(org.springframework.security.authentication.BadCredentialsException ex) {
+        log.warn("Authentication failed - invalid credentials");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Invalid email or password. Please check your credentials and try again.");
+        problemDetail.setTitle("Invalid Credentials");
+        problemDetail.setType(URI.create("https://api.cinereserve.com/errors/invalid-credentials"));
+        problemDetail.setProperty("timestamp", Instant.now().toString());
+        return problemDetail;
+    }
+
+    @ExceptionHandler(org.springframework.security.authentication.DisabledException.class)
+    public ProblemDetail handleDisabledException(org.springframework.security.authentication.DisabledException ex) {
+        log.warn("Authentication failed - account disabled / unverified");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your account has not been verified yet. Please check your email for the verification code.");
+        problemDetail.setTitle("Account Unverified");
+        problemDetail.setType(URI.create("https://api.cinereserve.com/errors/account-unverified"));
+        problemDetail.setProperty("timestamp", Instant.now().toString());
+        return problemDetail;
+    }
+
+    @ExceptionHandler(org.springframework.security.authentication.LockedException.class)
+    public ProblemDetail handleLockedException(org.springframework.security.authentication.LockedException ex) {
+        log.warn("Authentication failed - account locked");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "Your account is temporarily locked. Please contact support.");
+        problemDetail.setTitle("Account Locked");
+        problemDetail.setType(URI.create("https://api.cinereserve.com/errors/account-locked"));
+        problemDetail.setProperty("timestamp", Instant.now().toString());
+        return problemDetail;
+    }
+
+    @ExceptionHandler(org.springframework.security.core.userdetails.UsernameNotFoundException.class)
+    public ProblemDetail handleUsernameNotFoundException(org.springframework.security.core.userdetails.UsernameNotFoundException ex) {
+        log.warn("Authentication failed - user not found");
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "No account found with this email address.");
+        problemDetail.setTitle("Account Not Found");
+        problemDetail.setType(URI.create("https://api.cinereserve.com/errors/user-not-found"));
+        problemDetail.setProperty("timestamp", Instant.now().toString());
+        return problemDetail;
+    }
+
     @ExceptionHandler(InvalidOperationException.class)
     public ProblemDetail handleInvalidOperationException(InvalidOperationException ex) {
         log.warn("Invalid operation: {}", ex.getMessage());

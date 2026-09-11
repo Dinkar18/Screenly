@@ -81,8 +81,8 @@ public class AuthService {
 
         String htmlTemplate = "<div style=\"font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background-color: #18181b; padding: 40px; border-radius: 12px; color: #ffffff; text-align: center; border: 1px solid #27272a;\">"
                 + "<div style=\"margin-bottom: 30px;\">"
-                + "<h1 style=\"color: #ffffff; margin: 0; font-size: 28px; letter-spacing: -0.5px;\">Cine<span style=\"color: #dc2626;\">Reserve</span></h1>"
-                + "<p style=\"color: #a1a1aa; font-size: 14px; margin-top: 5px;\">Premium Cinema Club</p>"
+                + "<h1 style=\"color: #ffffff; margin: 0; font-size: 28px; letter-spacing: -0.5px;\">Screen<span style=\"color: #dc2626;\">ly</span></h1>"
+                + "<p style=\"color: #a1a1aa; font-size: 14px; margin-top: 5px;\">Cinema Booking Experience</p>"
                 + "</div>"
                 + "<div style=\"background-color: #27272a; padding: 30px; border-radius: 8px; margin-bottom: 30px;\">"
                 + "<h2 style=\"color: #ffffff; margin-top: 0; font-size: 20px; font-weight: 500;\">Verify your email address</h2>"

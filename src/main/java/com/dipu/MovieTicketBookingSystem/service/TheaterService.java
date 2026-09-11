@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -124,7 +125,7 @@ public class TheaterService {
 
         Screen savedScreen = screenRepository.save(screen);
 
-        // Auto-generate physical seats (e.g. 1A, 1B... 10J)
+        // Auto-generate physical seats in batch (e.g. 1A, 1B... 10J)
         generateSeatsForScreen(savedScreen);
 
         return mapToScreenResponse(savedScreen);
@@ -134,6 +135,7 @@ public class TheaterService {
         int capacity = screen.getCapacity();
         int rows = (int) Math.ceil((double) capacity / 10);
         int currentSeatCount = 0;
+        List<Seat> seats = new ArrayList<>(capacity);
 
         for (int row = 0; row < rows; row++) {
             for (int num = 1; num <= 10; num++) {
@@ -144,10 +146,11 @@ public class TheaterService {
                         .screen(screen)
                         .seatIdentifier(seatIdentifier)
                         .build();
-                seatRepository.save(seat);
+                seats.add(seat);
                 currentSeatCount++;
             }
         }
+        seatRepository.saveAll(seats);
     }
 
     private String getExcelColumnName(int n) {

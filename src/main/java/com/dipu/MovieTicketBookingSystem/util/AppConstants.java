@@ -20,7 +20,7 @@ public final class AppConstants {
 
     // Auth & OTP Constants
     public static final int OTP_EXPIRY_MINUTES = 10;
-    public static final String OTP_EMAIL_SUBJECT = "Verify Your CineReserve Account";
+    public static final String OTP_EMAIL_SUBJECT = "Verify Your Screenly Account";
     public static final String RESET_EMAIL_SUBJECT = "Password Reset Request";
 
     // Showtime Constants
