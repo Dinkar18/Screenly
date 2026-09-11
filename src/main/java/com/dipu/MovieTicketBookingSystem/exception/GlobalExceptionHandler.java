@@ -20,7 +20,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problemDetail.setTitle("Seat Unavailable");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/seat-unavailable"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -30,7 +30,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Another user is currently booking one of the selected seats. Please try again.");
         problemDetail.setTitle("Seat Booking Conflict");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/booking-conflict"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -40,7 +40,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Cannot delete this record because it is currently in use (e.g. has active screens, showtimes, or bookings).");
         problemDetail.setTitle("Data Integrity Violation");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/data-integrity"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -50,7 +50,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "A backend service is currently unavailable. Please try again later.");
         problemDetail.setTitle("Service Unavailable");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/service-unavailable"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -60,7 +60,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
         problemDetail.setTitle("Resource Not Found");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/not-found"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -70,7 +70,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
         problemDetail.setTitle("Email Already Registered");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/email-registered"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -80,7 +80,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
         problemDetail.setTitle("Invalid Token");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/invalid-token"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -90,7 +90,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problemDetail.setTitle("Invalid Operation");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/invalid-operation"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -100,7 +100,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
         problemDetail.setTitle("Bad Request");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/bad-request"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 
@@ -110,7 +110,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, "Validation failed for one or more fields");
         problemDetail.setTitle("Validation Error");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/validation-error"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         
         // Extract field errors
         var fieldErrors = ex.getBindingResult().getFieldErrors().stream()
@@ -127,7 +127,7 @@ public class GlobalExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred.");
         problemDetail.setTitle("Internal Server Error");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/internal-server-error"));
-        problemDetail.setProperty("timestamp", Instant.now());
+        problemDetail.setProperty("timestamp", Instant.now().toString());
         return problemDetail;
     }
 }

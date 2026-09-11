@@ -38,7 +38,12 @@ public class SecurityConfig {
                 .cors(org.springframework.security.config.Customizer.withDefaults())
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/actuator/health", "/api/v1/movies/**", "/api/v1/webhooks/stripe").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/movies", "/api/v1/movies/**", "/api/v1/theaters/**", "/api/v1/screens/**", "/api/v1/showtimes/**").permitAll()
+                        .requestMatchers("/api/v1/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/actuator/health", "/api/v1/webhooks/stripe").permitAll()
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers(org.springframework.http.HttpMethod.POST, "/api/v1/movies/**", "/api/v1/theaters/**", "/api/v1/screens/**", "/api/v1/showtimes/**").hasRole("ADMIN")
+                        .requestMatchers(org.springframework.http.HttpMethod.PUT, "/api/v1/movies/**", "/api/v1/theaters/**", "/api/v1/screens/**", "/api/v1/showtimes/**").hasRole("ADMIN")
+                        .requestMatchers(org.springframework.http.HttpMethod.DELETE, "/api/v1/movies/**", "/api/v1/theaters/**", "/api/v1/screens/**", "/api/v1/showtimes/**").hasRole("ADMIN")
                         .requestMatchers("/actuator/prometheus").hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
