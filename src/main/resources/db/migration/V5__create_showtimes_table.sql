@@ -1,4 +1,4 @@
-CREATE TABLE showtimes (
+CREATE TABLE IF NOT EXISTS showtimes (
     id UUID PRIMARY KEY,
     movie_id UUID NOT NULL,
     screen_id UUID NOT NULL,

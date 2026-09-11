@@ -1,4 +1,4 @@
-CREATE TABLE seats (
+CREATE TABLE IF NOT EXISTS seats (
     id UUID PRIMARY KEY,
     screen_id UUID NOT NULL,
     seat_identifier VARCHAR(10) NOT NULL, -- e.g., "A1", "B5"
@@ -8,7 +8,7 @@ CREATE TABLE seats (
     CONSTRAINT uc_screen_seat UNIQUE (screen_id, seat_identifier)
 );
 
-CREATE TABLE bookings (
+CREATE TABLE IF NOT EXISTS bookings (
     id UUID PRIMARY KEY,
     user_id UUID NOT NULL,
     showtime_id UUID NOT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE bookings (
     CONSTRAINT fk_booking_showtime FOREIGN KEY (showtime_id) REFERENCES showtimes(id) ON DELETE CASCADE
 );
 
-CREATE TABLE showtime_seats (
+CREATE TABLE IF NOT EXISTS showtime_seats (
     id UUID PRIMARY KEY,
     showtime_id UUID NOT NULL,
     seat_id UUID NOT NULL,

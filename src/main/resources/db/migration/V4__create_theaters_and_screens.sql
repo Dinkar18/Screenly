@@ -1,4 +1,4 @@
-CREATE TABLE theaters (
+CREATE TABLE IF NOT EXISTS theaters (
     id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
     city VARCHAR(100) NOT NULL,
@@ -7,7 +7,7 @@ CREATE TABLE theaters (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE screens (
+CREATE TABLE IF NOT EXISTS screens (
     id UUID PRIMARY KEY,
     theater_id UUID NOT NULL,
     name VARCHAR(255) NOT NULL,
