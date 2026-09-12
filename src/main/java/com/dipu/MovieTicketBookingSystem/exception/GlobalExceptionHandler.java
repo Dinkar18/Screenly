@@ -157,15 +157,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ProblemDetail handleValidationException(MethodArgumentNotValidException ex) {
         log.error("Validation error: {}", ex.getMessage());
-        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, "Validation failed for one or more fields");
-        problemDetail.setTitle("Validation Error");
+        
+        // Extract customer-friendly field error messages
+        var fieldErrors = ex.getBindingResult().getFieldErrors().stream()
+                .map(error -> {
+                    String defaultMessage = error.getDefaultMessage();
+                    return defaultMessage != null ? defaultMessage : (error.getField() + " is invalid");
+                })
+                .toList();
+
+        String combinedMessage = fieldErrors.isEmpty() 
+                ? "Please check your input and try again." 
+                : String.join(". ", fieldErrors);
+
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.UNPROCESSABLE_ENTITY, combinedMessage);
+        problemDetail.setTitle("Invalid Input");
         problemDetail.setType(URI.create("https://api.cinereserve.com/errors/validation-error"));
         problemDetail.setProperty("timestamp", Instant.now().toString());
-        
-        // Extract field errors
-        var fieldErrors = ex.getBindingResult().getFieldErrors().stream()
-                .map(error -> error.getField() + ": " + error.getDefaultMessage())
-                .toList();
         problemDetail.setProperty("errors", fieldErrors);
         
         return problemDetail;
