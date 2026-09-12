@@ -64,6 +64,16 @@ public class GlobalExceptionHandler {
         return problemDetail;
     }
 
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public ProblemDetail handleNoResourceFoundException(org.springframework.web.servlet.resource.NoResourceFoundException ex) {
+        log.warn("Endpoint not found: {}", ex.getResourcePath());
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "The requested endpoint does not exist: /" + ex.getResourcePath());
+        problemDetail.setTitle("Endpoint Not Found");
+        problemDetail.setType(URI.create("https://api.cinereserve.com/errors/not-found"));
+        problemDetail.setProperty("timestamp", Instant.now().toString());
+        return problemDetail;
+    }
+
     @ExceptionHandler(EmailAlreadyRegisteredException.class)
     public ProblemDetail handleEmailAlreadyRegisteredException(EmailAlreadyRegisteredException ex) {
         log.warn("Email already registered: {}", ex.getMessage());

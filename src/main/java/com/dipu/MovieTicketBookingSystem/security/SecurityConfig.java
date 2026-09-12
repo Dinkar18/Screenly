@@ -50,7 +50,7 @@ public class SecurityConfig {
                 )
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/api/v1/movies", "/api/v1/movies/**", "/api/v1/theaters/**", "/api/v1/screens/**", "/api/v1/showtimes/**").permitAll()
-                        .requestMatchers("/api/v1/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/actuator/health", "/api/v1/webhooks/stripe").permitAll()
+                        .requestMatchers("/health", "/api/v1/health", "/actuator/health", "/api/v1/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/api/v1/webhooks/stripe").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST, "/api/v1/movies/**", "/api/v1/theaters/**", "/api/v1/screens/**", "/api/v1/showtimes/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT, "/api/v1/movies/**", "/api/v1/theaters/**", "/api/v1/screens/**", "/api/v1/showtimes/**").hasRole("ADMIN")
